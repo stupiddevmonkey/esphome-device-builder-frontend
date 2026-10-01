@@ -5,6 +5,8 @@ import {
   mdiHandshakeOutline,
   mdiPalette,
   mdiPaletteOutline,
+  mdiPuzzle,
+  mdiPuzzleOutline,
   mdiSend,
   mdiSendOutline,
   mdiServerNetwork,
@@ -35,6 +37,7 @@ import "./settings-dialog/build-offload-section.js";
 import "./settings-dialog/build-server-section.js";
 import "./settings-dialog/language-section.js";
 import "./settings-dialog/pairing-requests-section.js";
+import "./service-template-library-panel.js";
 
 registerMdiIcons({
   close: mdiClose,
@@ -42,6 +45,8 @@ registerMdiIcons({
   "handshake-outline": mdiHandshakeOutline,
   palette: mdiPalette,
   "palette-outline": mdiPaletteOutline,
+  puzzle: mdiPuzzle,
+  "puzzle-outline": mdiPuzzleOutline,
   send: mdiSend,
   "send-outline": mdiSendOutline,
   "server-network": mdiServerNetwork,
@@ -181,6 +186,8 @@ export class ESPHomeSettingsDialog extends LitElement {
         return html`<esphome-settings-appearance></esphome-settings-appearance>`;
       case "language":
         return html`<esphome-settings-language></esphome-settings-language>`;
+      case "service_templates":
+        return html`<esphome-service-template-library-panel></esphome-service-template-library-panel>`;
       case "build_server":
         return html`<esphome-settings-build-server></esphome-settings-build-server>`;
       case "pairing_requests":

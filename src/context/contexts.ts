@@ -17,6 +17,10 @@ import type {
   PeerSummary,
   RemoteBuildPeer,
 } from "../api/types/remote-build.js";
+import type {
+  ServiceTemplate,
+  ServiceTemplateUsage,
+} from "../api/types/service-templates.js";
 import type { ExperienceLevel } from "../api/types/system.js";
 import type { LocalizeFunc } from "../common/localize.js";
 
@@ -226,6 +230,16 @@ export const integrationDocsContext = createContext<Record<string, IntegrationDo
  *  ``ConfiguredDevice.labels`` (an array of ids); consumers join
  *  against this map at render time to resolve name + color. */
 export const labelsContext = createContext<Label[]>(Symbol("esphome-labels"));
+
+/** Stateful service-template catalog from subscribe_events. */
+export const serviceTemplatesContext = createContext<Map<string, ServiceTemplate> | null>(
+  Symbol("esphome-service-templates")
+);
+
+/** Template-backed package entries across configured devices. */
+export const serviceTemplateUsagesContext = createContext<ServiceTemplateUsage[] | null>(
+  Symbol("esphome-service-template-usages")
+);
 
 /**
  * Context for a count of the times the editor above a form took its values

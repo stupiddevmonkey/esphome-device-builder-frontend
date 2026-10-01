@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stubStorage } from "../_storage.js";
 import { APIError, CommandTimeoutError } from "../../src/api/api-error.js";
 import { ESPHomeAPI } from "../../src/api/esphome-api.js";
+import { ServiceTemplateSource } from "../../src/api/types/service-templates.js";
 import {
   fireDocumentEvent,
   fireWindowEvent,
@@ -143,6 +144,183 @@ describe("ESPHomeAPI — connection", () => {
     expect(onConnectionLost).toHaveBeenCalledTimes(1);
     expect(api.connected).toBe(false);
     expect(MockWebSocket.instances).toHaveLength(1);
+  });
+});
+
+describe("ESPHomeAPI — service templates", () => {
+  beforeEach(() => {
+    installMockWebSocket();
+  });
+  afterEach(() => {
+    uninstallMockWebSocket();
+  });
+
+  it("sends the typed service-template command shapes", async () => {
+    const api = makeApi();
+    const ws = await connect(api);
+    let sentIndex = 0;
+    const serviceTemplate = {
+      id: "garage_door",
+      title: "Garage door",
+      source: ServiceTemplateSource.BUILTIN,
+      description: null,
+      category: null,
+      path: null,
+      variables: [],
+      supported_platforms: [],
+      requires: [],
+      version: 1,
+      body_sha: "sha",
+      modified: false,
+      update_available: false,
+    };
+
+    const expectCommand = async <T>(
+      pending: Promise<T>,
+      command: string,
+      args: unknown,
+      result: T
+    ): Promise<void> => {
+      const sent = ws.sentAs<{
+        command: string;
+        message_id: string;
+        args?: unknown;
+      }>(sentIndex++);
+      expect(sent.command).toBe(command);
+      expect(sent.args).toEqual(args);
+      ws.receive({ message_id: sent.message_id, result });
+      await expect(pending).resolves.toEqual(result);
+    };
+
+    await expectCommand(
+      api.getServiceTemplate("garage_door"),
+      "service_templates/get",
+      { template_id: "garage_door" },
+      { template: serviceTemplate, body: "cover:", manifest: null }
+    );
+    await expectCommand(
+      api.createServiceTemplate({
+        template_id: "garage_door",
+        body: "cover:",
+      }),
+      "service_templates/create",
+      { template_id: "garage_door", body: "cover:" },
+      serviceTemplate
+    );
+    await expectCommand(
+      api.updateServiceTemplate({
+        template_id: "garage_door",
+        manifest: null,
+      }),
+      "service_templates/update",
+      { template_id: "garage_door", manifest: null },
+      serviceTemplate
+    );
+    await expectCommand(
+      api.deleteServiceTemplate("garage_door", true),
+      "service_templates/delete",
+      { template_id: "garage_door", force: true },
+      { template_id: "garage_door", usages: [] }
+    );
+    await expectCommand(
+      api.extractServiceTemplate({
+        configuration: "garage.yaml",
+        blocks: ["cover", "switch"],
+        template_id: "garage_door",
+      }),
+      "service_templates/extract",
+      {
+        configuration: "garage.yaml",
+        blocks: ["cover", "switch"],
+        template_id: "garage_door",
+      },
+      serviceTemplate
+    );
+    await expectCommand(
+      api.applyServiceTemplate({
+        configuration: "garage.yaml",
+        template_id: "garage_door",
+        vars: { relay_pin: "GPIO4" },
+        yaml: "esphome:",
+      }),
+      "service_templates/apply",
+      {
+        configuration: "garage.yaml",
+        template_id: "garage_door",
+        vars: { relay_pin: "GPIO4" },
+        yaml: "esphome:",
+      },
+      {
+        configuration: "garage.yaml",
+        package_key: "garage_door",
+        template_id: "garage_door",
+        content: "packages:",
+        draft: true,
+      }
+    );
+    await expectCommand(
+      api.removeServiceTemplate({
+        configuration: "garage.yaml",
+        package_key: "garage_door",
+      }),
+      "service_templates/remove",
+      {
+        configuration: "garage.yaml",
+        package_key: "garage_door",
+      },
+      {
+        configuration: "garage.yaml",
+        package_key: "garage_door",
+        content: "esphome:",
+        draft: false,
+      }
+    );
+    await expectCommand(
+      api.acceptServiceTemplateUpdate("garage_door"),
+      "service_templates/accept_update",
+      { template_id: "garage_door" },
+      serviceTemplate
+    );
+    await expectCommand(
+      api.getServiceTemplateUsages("garage_door"),
+      "service_templates/usages",
+      { template_id: "garage_door" },
+      []
+    );
+  });
+
+  it("passes service selections through devices/create", async () => {
+    const api = makeApi();
+    const ws = await connect(api);
+    const pending = api.createDevice({
+      name: "garage",
+      templates: [
+        {
+          template_id: "garage_door",
+          vars: { relay_pin: "GPIO4" },
+        },
+      ],
+    });
+    const sent = ws.sentAs<{
+      command: string;
+      message_id: string;
+      args?: unknown;
+    }>(0);
+    expect(sent.command).toBe("devices/create");
+    expect(sent.args).toEqual({
+      name: "garage",
+      templates: [
+        {
+          template_id: "garage_door",
+          vars: { relay_pin: "GPIO4" },
+        },
+      ],
+    });
+    ws.receive({
+      message_id: sent.message_id,
+      result: { configuration: "garage.yaml" },
+    });
+    await expect(pending).resolves.toEqual({ configuration: "garage.yaml" });
   });
 });
 

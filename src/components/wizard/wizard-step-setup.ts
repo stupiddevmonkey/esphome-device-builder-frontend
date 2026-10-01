@@ -3,6 +3,7 @@ import { css, html, LitElement, nothing, type PropertyValues } from "lit";
 import { customElement, property, query, state } from "lit/decorators.js";
 import type { ESPHomeAPI } from "../../api/index.js";
 import type { BoardCatalogEntry } from "../../api/types/boards.js";
+import type { DeviceTemplateSelection } from "../../api/types/service-templates.js";
 import type { LocalizeFunc } from "../../common/localize.js";
 import { apiContext, localizeContext } from "../../context/index.js";
 import { inputStyles } from "../../styles/inputs.js";
@@ -22,10 +23,12 @@ import {
 import { wifiFieldsStyles } from "../onboarding/wifi-fields-styles.js";
 import { isWifiPasswordTooShort, renderWifiFields } from "../onboarding/wifi-fields.js";
 import type { ESPHomeDeviceNameInputs } from "../shared/device-name-inputs.js";
+import type { ESPHomeWizardStepServices } from "./wizard-step-services.js";
 
 import "@home-assistant/webawesome/dist/components/checkbox/checkbox.js";
 import "@home-assistant/webawesome/dist/components/spinner/spinner.js";
 import "../shared/device-name-inputs.js";
+import "./wizard-step-services.js";
 
 // While createDevice is in flight the devices push announcing the new device
 // arrives before the dialog closes; checking against it would flash a
@@ -48,6 +51,8 @@ export class ESPHomeWizardStepSetup extends LitElement {
   // hidden, so the Enter listener follows this rather than connectedCallback.
   @property({ type: Boolean }) active = false;
 
+  @property({ type: Number }) session = 0;
+
   /** Hostnames of every configured device; a collision blocks submit. */
   @property({ attribute: false })
   takenHostnames: ReadonlySet<string> = new Set();
@@ -57,7 +62,12 @@ export class ESPHomeWizardStepSetup extends LitElement {
   @property({ type: Boolean }) submitting = false;
 
   @state()
-  private _stage: "name" | "wifi" = "name";
+  private _stage: "name" | "wifi" | "services" = "name";
+
+  @query("esphome-wizard-step-services")
+  private _services?: ESPHomeWizardStepServices;
+
+  private _pendingWifi = { ssid: "", password: "" };
 
   // secrets.yaml has both wifi_ssid and wifi_password keys (see
   // hasSharedWifiSecret) — the wizard skips Wi-Fi and reuses !secret.
@@ -113,6 +123,7 @@ export class ESPHomeWizardStepSetup extends LitElement {
     // arriving on the Wi-Fi stage must still block Finish.
     if (!(this._nameInputs?.canSubmit ?? false)) return false;
     if (this._stage === "name") return true;
+    if (this._stage === "services") return this._services?.canSubmit ?? true;
     if (this._wifiConfigured) return true;
     // The Wi-Fi stage only appears when Wi-Fi is required, so an SSID is
     // mandatory; a too-short WPA passphrase is also rejected.
@@ -121,6 +132,10 @@ export class ESPHomeWizardStepSetup extends LitElement {
 
   protected willUpdate(changed: PropertyValues): void {
     if (changed.has("active")) this._enter.set(this.active);
+    if (changed.has("session")) {
+      this._stage = "name";
+      this._pendingWifi = { ssid: "", password: "" };
+    }
   }
 
   async connectedCallback() {
@@ -394,6 +409,12 @@ export class ESPHomeWizardStepSetup extends LitElement {
         this._renderNameSection()
       }
       ${this._stage === "wifi" ? this._renderWifiSection() : nothing}
+      <esphome-wizard-step-services
+        ?hidden=${this._stage !== "services"}
+        .board=${this.board}
+        .session=${this.session}
+        @services-change=${() => this.requestUpdate()}
+      ></esphome-wizard-step-services>
 
       <div class="actions">
         <button
@@ -433,9 +454,11 @@ export class ESPHomeWizardStepSetup extends LitElement {
                 >
                   ${this.submitting ? html`<wa-spinner></wa-spinner>` : nothing}
                   ${
-                    this._stage === "name" && this._collectWifi
-                      ? this._localize("wizard.next")
-                      : this._localize("wizard.finish_setup")
+                    this._stage === "services" ||
+                    (!this._services?.hasTemplates &&
+                      (this._stage === "wifi" || !this._collectWifi))
+                      ? this._localize("wizard.finish_setup")
+                      : this._localize("wizard.next")
                   }
                 </button>`
           }
@@ -548,6 +571,10 @@ export class ESPHomeWizardStepSetup extends LitElement {
       this._stage = "name";
       return;
     }
+    if (this._stage === "services") {
+      this._stage = this._collectWifi ? "wifi" : "name";
+      return;
+    }
     fireEvent(this, "next-step", "board");
   }
 
@@ -561,25 +588,33 @@ export class ESPHomeWizardStepSetup extends LitElement {
         this._stage = "wifi";
         return;
       }
-      // Nothing to collect: a networked board uses Ethernet/Thread, a
-      // configured install reuses !secret, a no-Wi-Fi board gets a no-network
-      // stub. Finish straight from the name stage with no credentials.
-      this._finish("", "");
+      this._continueAfterWifi("", "");
+      return;
+    }
+    if (this._stage === "services") {
+      this._finish(this._pendingWifi.ssid, this._pendingWifi.password);
       return;
     }
     if (this._wifiConfigured) {
-      this._finish("", "");
+      this._continueAfterWifi("", "");
       return;
     }
-    // Pass the typed credentials through; the backend writes them to
-    // secrets.yaml and emits !secret rather than inlining bare values.
-    this._finish(this._wifiSsid, this._wifiPassword);
+    this._continueAfterWifi(this._wifiSsid, this._wifiPassword);
   }
 
   private _onUseSavedWifi = () => {
     if (this.submitting) return;
-    this._finish("", "");
+    this._continueAfterWifi("", "");
   };
+
+  private _continueAfterWifi(wifiSsid: string, wifiPassword: string): void {
+    this._pendingWifi = { ssid: wifiSsid, password: wifiPassword };
+    if (this._services?.hasTemplates) {
+      this._stage = "services";
+      return;
+    }
+    this._finish(wifiSsid, wifiPassword);
+  }
 
   private _finish(wifiSsid: string, wifiPassword: string) {
     fireEvent(this, "finish-setup", {
@@ -589,6 +624,7 @@ export class ESPHomeWizardStepSetup extends LitElement {
       wifiSsid,
       wifiPassword,
       fullSetup: this._offersFullSetup && this._fullSetup,
+      templates: this._services?.selections ?? ([] as DeviceTemplateSelection[]),
     });
   }
 }

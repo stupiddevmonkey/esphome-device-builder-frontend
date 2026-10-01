@@ -1,4 +1,9 @@
-import { mdiArrowDecisionOutline, mdiCogOutline, mdiMemory } from "@mdi/js";
+import {
+  mdiArrowDecisionOutline,
+  mdiCogOutline,
+  mdiMemory,
+  mdiPuzzleOutline,
+} from "@mdi/js";
 import { registerMdiIcons } from "../../util/register-icons.js";
 
 /**
@@ -10,10 +15,12 @@ export const SECTION_ICON = {
   core: "cog-outline",
   components: "memory",
   automations: "arrow-decision-outline",
+  services: "puzzle-outline",
 } as const;
 
 registerMdiIcons({
   [SECTION_ICON.core]: mdiCogOutline,
   [SECTION_ICON.components]: mdiMemory,
   [SECTION_ICON.automations]: mdiArrowDecisionOutline,
+  [SECTION_ICON.services]: mdiPuzzleOutline,
 });

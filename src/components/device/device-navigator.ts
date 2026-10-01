@@ -3,6 +3,7 @@ import {
   mdiChevronDown,
   mdiChevronUp,
   mdiCog,
+  mdiContentSaveOutline,
   mdiMagnify,
   mdiMenu,
   mdiPlusCircleOutline,
@@ -13,8 +14,18 @@ import { customElement, property, query, state } from "lit/decorators.js";
 import memoizeOne from "memoize-one";
 import type { ESPHomeAPI } from "../../api/index.js";
 import type { BoardCatalogEntry } from "../../api/types/boards.js";
+import type {
+  ServiceTemplate,
+  ServiceTemplateUsage,
+} from "../../api/types/service-templates.js";
 import type { LocalizeFunc } from "../../common/localize.js";
-import { apiContext, expertModeContext, localizeContext } from "../../context/index.js";
+import {
+  apiContext,
+  expertModeContext,
+  localizeContext,
+  serviceTemplatesContext,
+  serviceTemplateUsagesContext,
+} from "../../context/index.js";
 import { espHomeStyles } from "../../styles/shared.js";
 import { textStyles } from "../../styles/text.js";
 import { subscribeAutomationCatalogCache } from "../../util/automation-catalog-cache.js";
@@ -46,12 +57,16 @@ import { navItemMatches } from "./navigator-search-match.js";
 
 import "@home-assistant/webawesome/dist/components/icon/icon.js";
 import "./add-automation-dialog.js";
-import type { ESPHomeAddAutomationDialog } from "./add-automation-dialog.js";
+import type { ESPHomeAddServiceTemplateDialog } from "../add-service-template-dialog.js";
 import "./add-component-dialog.js";
-import type { ESPHomeAddComponentDialog } from "./add-component-dialog.js";
+import type { ESPHomeExtractServiceTemplateDialog } from "../extract-service-template-dialog.js";
 import "./add-config-dialog.js";
-import type { ESPHomeAddConfigDialog } from "./add-config-dialog.js";
+import type { ESPHomeAddAutomationDialog } from "./add-automation-dialog.js";
 import "./add-script-dialog.js";
+import type { ESPHomeAddComponentDialog } from "./add-component-dialog.js";
+import "../add-service-template-dialog.js";
+import type { ESPHomeAddConfigDialog } from "./add-config-dialog.js";
+import "../extract-service-template-dialog.js";
 import type { ESPHomeAddScriptDialog } from "./add-script-dialog.js";
 import "./device-navigator-search.js";
 import type { ESPHomeNavigatorSearch } from "./device-navigator-search.js";
@@ -62,6 +77,7 @@ registerMdiIcons({
   "chevron-down": mdiChevronDown,
   "chevron-up": mdiChevronUp,
   cog: mdiCog,
+  "content-save-outline": mdiContentSaveOutline,
   magnify: mdiMagnify,
   menu: mdiMenu,
   "plus-circle-outline": mdiPlusCircleOutline,
@@ -80,6 +96,14 @@ export class ESPHomeDeviceNavigator extends LitElement {
 
   @consume({ context: apiContext })
   private _api?: ESPHomeAPI;
+
+  @consume({ context: serviceTemplatesContext, subscribe: true })
+  @state()
+  private _serviceTemplates: Map<string, ServiceTemplate> | null = null;
+
+  @consume({ context: serviceTemplateUsagesContext, subscribe: true })
+  @state()
+  private _serviceUsages: ServiceTemplateUsage[] | null = null;
 
   /**
    * Re-renders when the component-name or automation-trigger cache fills
@@ -189,6 +213,12 @@ export class ESPHomeDeviceNavigator extends LitElement {
   @query("esphome-add-script-dialog")
   private _addScriptDialog!: ESPHomeAddScriptDialog;
 
+  @query("esphome-add-service-template-dialog")
+  private _addServiceDialog!: ESPHomeAddServiceTemplateDialog;
+
+  @query("esphome-extract-service-template-dialog")
+  private _extractServiceDialog!: ESPHomeExtractServiceTemplateDialog;
+
   @query("esphome-navigator-search")
   private _search!: ESPHomeNavigatorSearch;
 
@@ -254,12 +284,20 @@ export class ESPHomeDeviceNavigator extends LitElement {
     if (
       (changedProperties.has("selectedKey") ||
         changedProperties.has("yaml") ||
-        changedProperties.has("selectedFromLine")) &&
+        changedProperties.has("selectedFromLine") ||
+        changedProperties.has("_serviceUsages") ||
+        changedProperties.has("_serviceTemplates")) &&
       this.yaml
     ) {
       if (!this.selectedKey) {
         // Cleared externally — drop the local highlight.
         this._selectedLine = null;
+        this._selectedRange = null;
+        return;
+      }
+      if (this.selectedKey.startsWith("service:")) {
+        const match = this._serviceRows.find((row) => row.item.key === this.selectedKey);
+        this._selectedLine = match?.item.fromLine ?? null;
         this._selectedRange = null;
         return;
       }
@@ -287,6 +325,7 @@ export class ESPHomeDeviceNavigator extends LitElement {
   protected render() {
     const buckets = this._deriveBuckets(this.yaml);
     const { core, components, automations } = buckets;
+    const serviceRows = this._serviceRows;
     const isGroupOpen = (key: string) => !this._collapsedGroups.has(key);
 
     interface NavSection {
@@ -296,7 +335,7 @@ export class ESPHomeDeviceNavigator extends LitElement {
        *  buttons (cog / chip / automation) so the two surfaces agree. */
       icon: string;
       items: YamlSection[];
-      category: "core" | "component" | "automation";
+      category: "core" | "component" | "automation" | "service";
       /** A section can carry multiple "+ Add X" affordances —
        *  Automations has both "+ Add automation" and "+ Add script",
        *  the others have one. */
@@ -350,17 +389,39 @@ export class ESPHomeDeviceNavigator extends LitElement {
           },
         ],
       },
+      {
+        label: this._localize("device.section_services"),
+        desc: this._localize("device.section_services_desc"),
+        icon: SECTION_ICON.services,
+        items: serviceRows.map((row) => row.item),
+        category: "service",
+        actions: [
+          {
+            label: this._localize("service_templates.add"),
+            icon: SECTION_ICON.services,
+            onClick: () => this._addServiceDialog.open(),
+          },
+          {
+            label: this._localize("service_templates.save_template"),
+            icon: "content-save-outline",
+            onClick: () => this._extractServiceDialog.open(),
+          },
+        ],
+      },
     ];
 
     // Labels resolve once per (yaml, catalog tick, platform, name, locale)
     // via the memo, so typing only re-runs the cheap match predicate.
-    const resolved = this._resolveLabels(
-      buckets,
-      this._caches.tick,
-      this.platform,
-      this.deviceName,
-      this._localize
-    );
+    const resolved = [
+      ...this._resolveLabels(
+        buckets,
+        this._caches.tick,
+        this.platform,
+        this.deviceName,
+        this._localize
+      ),
+      serviceRows,
+    ];
     const q = this._query.trim();
     const filtering = q.length > 0;
     const matches = filtering
@@ -418,6 +479,17 @@ export class ESPHomeDeviceNavigator extends LitElement {
           .yaml=${this.yaml}
           @automation-added=${this._onAutomationAdded}
         ></esphome-add-script-dialog>
+        <esphome-add-service-template-dialog
+          .configuration=${this.configuration}
+          .platform=${this.platform}
+          .board=${this.board}
+          .yaml=${this.yaml}
+          @service-template-applied=${this._onServiceTemplateApplied}
+        ></esphome-add-service-template-dialog>
+        <esphome-extract-service-template-dialog
+          .configuration=${this.configuration}
+          .yaml=${this.yaml}
+        ></esphome-extract-service-template-dialog>
         <header class="card-header">
           <h2 class="card-title truncate">${this._localize("device.navigator_title")}</h2>
           <div class="header-actions">
@@ -500,8 +572,11 @@ export class ESPHomeDeviceNavigator extends LitElement {
                     onToggle: () => {
                       if (!filtering) this._toggleSection(i);
                     },
-                    onItemEnter: (item) =>
-                      this._onItemHover(item.fromLine, item.fromLine, item.toLine),
+                    onItemEnter: (item) => {
+                      if (item.fromLine >= 0) {
+                        this._onItemHover(item.fromLine, item.fromLine, item.toLine);
+                      }
+                    },
                     onItemLeave: () => this._onItemLeave(),
                     onItemClick: (item) => this._onItemClick(item),
                   });
@@ -599,11 +674,39 @@ export class ESPHomeDeviceNavigator extends LitElement {
     } else {
       this.selectedKey = sectionKey;
       this._selectedLine = fromLine;
-      this._selectedRange = { fromLine, toLine };
-      this._emitHighlight({ fromLine, toLine }, true);
-      this._emitSectionSelect(sectionKey, fromLine);
+      this._selectedRange = fromLine >= 0 ? { fromLine, toLine } : null;
+      this._emitHighlight(this._selectedRange, fromLine >= 0);
+      this._emitSectionSelect(sectionKey, fromLine >= 0 ? fromLine : undefined);
     }
   }
+
+  private get _serviceRows(): NavRow[] {
+    const usages = (this._serviceUsages ?? [])
+      .filter((usage) => usage.configuration === this.configuration)
+      .sort((a, b) => a.package_key.localeCompare(b.package_key));
+    return usages.map((usage, index) => {
+      const template = this._serviceTemplates?.get(usage.template_id);
+      return {
+        item: {
+          key: `service:${usage.package_key}`,
+          fromLine: -(index + 1),
+          toLine: -(index + 1),
+        },
+        labels: {
+          primary: template?.title ?? usage.template_id,
+          secondary:
+            usage.package_key !== usage.template_id ? usage.package_key : undefined,
+        },
+      };
+    });
+  }
+
+  private _onServiceTemplateApplied = (
+    event: CustomEvent<{ packageKey: string }>
+  ): void => {
+    event.stopPropagation();
+    this._emitSectionSelect(`service:${event.detail.packageKey}`, undefined);
+  };
 
   private _emitHighlight(range: HighlightRange | null, scroll: boolean) {
     fireEvent(this, "yaml-highlight", { range, scroll });

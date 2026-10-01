@@ -5,6 +5,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import { apiErrorDetails } from "../../api/api-error.js";
 import type { ESPHomeAPI } from "../../api/index.js";
 import type { BoardCatalogEntry, SlimBoard } from "../../api/types/boards.js";
+import type { DeviceTemplateSelection } from "../../api/types/service-templates.js";
 import type { LocalizeFunc } from "../../common/localize.js";
 import { apiContext, localizeContext } from "../../context/index.js";
 import { primaryHeaderDialogStyles } from "../../styles/dialog-chrome.js";
@@ -78,6 +79,9 @@ export class ESPHomeCreateConfigDialog extends LitElement implements ImportFlowH
 
   @state()
   private _step: WizardStep = "method";
+
+  @state()
+  private _session = 0;
 
   // Owned here, not in the method step, so the "Advanced" disclosure stays
   // open when the user navigates into an advanced option (empty-config /
@@ -203,6 +207,7 @@ export class ESPHomeCreateConfigDialog extends LitElement implements ImportFlowH
    * — each entry point sets those to its own starting value before calling
    * here. */
   private _resetTransientState(): void {
+    this._session++;
     this._creationMethod = "basic";
     this._advancedOpen = false;
     this._import.reset();
@@ -351,6 +356,7 @@ export class ESPHomeCreateConfigDialog extends LitElement implements ImportFlowH
       case "setup":
         return html`<esphome-wizard-step-setup
           .board=${this._selectedBoard}
+          .session=${this._session}
           .takenHostnames=${this._stepTakenHostnames}
           ?active=${this._dialog.open}
           ?submitting=${this._submitting}
@@ -525,9 +531,11 @@ export class ESPHomeCreateConfigDialog extends LitElement implements ImportFlowH
       wifiSsid: string;
       wifiPassword: string;
       fullSetup?: boolean;
+      templates?: DeviceTemplateSelection[];
     }>
   ) {
-    const { board, name, friendlyName, wifiSsid, wifiPassword, fullSetup } = e.detail;
+    const { board, name, friendlyName, wifiSsid, wifiPassword, fullSetup, templates } =
+      e.detail;
     if (!board) return;
     await this._runCreate(
       {
@@ -539,6 +547,7 @@ export class ESPHomeCreateConfigDialog extends LitElement implements ImportFlowH
         // referenced via !secret — never inlined.
         ssid: wifiSsid,
         psk: wifiPassword,
+        ...(templates?.length ? { templates } : {}),
       },
       { board, fullSetup }
     );
@@ -566,6 +575,7 @@ export class ESPHomeCreateConfigDialog extends LitElement implements ImportFlowH
       ssid?: string;
       psk?: string;
       file_content?: string;
+      templates?: DeviceTemplateSelection[];
     },
     options: {
       board?: BoardCatalogEntry | null;

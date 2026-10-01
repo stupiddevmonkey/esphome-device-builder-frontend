@@ -36,6 +36,7 @@ describe("device-navigator section header icons", () => {
       SECTION_ICON.core,
       SECTION_ICON.components,
       SECTION_ICON.automations,
+      SECTION_ICON.services,
     ]);
   });
 

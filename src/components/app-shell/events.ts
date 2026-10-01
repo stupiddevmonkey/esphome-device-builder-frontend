@@ -31,6 +31,12 @@ import type {
   RemoteBuildPeerRefreshedEventData,
 } from "../../api/types/remote-build-events.js";
 import type { PairingSummary, PeerSummary } from "../../api/types/remote-build.js";
+import type {
+  ServiceTemplateAppliedEventData,
+  ServiceTemplateDeletedEventData,
+  ServiceTemplateEventData,
+  ServiceTemplateRemovedEventData,
+} from "../../api/types/service-templates.js";
 import { type RemoteBuildJobState } from "../../context/index.js";
 import { anchorOffline } from "../../util/device-status.js";
 import { seededMap } from "../../util/snapshot.js";
@@ -71,6 +77,7 @@ export function handleEvent(host: ESPHomeApp, event: string, data: unknown): voi
         remote_builds_enabled,
         version_match_policy,
         include_local_in_pool,
+        service_templates,
       } = data as InitialStateEventData;
       // Mark prefs known so creation gates on the subscription, not a separate
       // get_preferences (preferences is always present). Skip the apply while a
@@ -83,6 +90,7 @@ export function handleEvent(host: ESPHomeApp, event: string, data: unknown): voi
       host._devices = devices.map((d) => anchorOffline(d));
       host._importableDevices = importable;
       host._devicesLoaded = true;
+      host._serviceTemplates = seededMap(service_templates, (template) => template.id);
       host._buildServerPeers = peers ?? null;
       host._buildOffloadDiscoveredHosts = seededMap(hosts, (h) => h.name);
       // Skip re-seeding pairings while an offloader write is in flight, so a
@@ -203,6 +211,45 @@ export function handleEvent(host: ESPHomeApp, event: string, data: unknown): voi
         idx === -1
           ? [...host._labels, label]
           : host._labels.map((l) => (l.id === label.id ? label : l));
+      break;
+    }
+    case DeviceEventType.SERVICE_TEMPLATE_CREATED:
+    case DeviceEventType.SERVICE_TEMPLATE_UPDATED: {
+      const { template } = data as ServiceTemplateEventData;
+      const next = new Map(host._serviceTemplates ?? []);
+      next.set(template.id, template);
+      host._serviceTemplates = next;
+      break;
+    }
+    case DeviceEventType.SERVICE_TEMPLATE_DELETED: {
+      const { template_id } = data as ServiceTemplateDeletedEventData;
+      if (host._serviceTemplates !== null) {
+        const next = new Map(host._serviceTemplates);
+        next.delete(template_id);
+        host._serviceTemplates = next;
+      }
+      break;
+    }
+    case DeviceEventType.SERVICE_TEMPLATE_APPLIED: {
+      const usage = data as ServiceTemplateAppliedEventData;
+      host._serviceTemplateUsageRevision += 1;
+      const next = (host._serviceTemplateUsages ?? []).filter(
+        (entry) =>
+          entry.configuration !== usage.configuration ||
+          entry.package_key !== usage.package_key
+      );
+      host._serviceTemplateUsages = [...next, usage];
+      break;
+    }
+    case DeviceEventType.SERVICE_TEMPLATE_REMOVED: {
+      const { configuration, package_key } = data as ServiceTemplateRemovedEventData;
+      host._serviceTemplateUsageRevision += 1;
+      if (host._serviceTemplateUsages !== null) {
+        host._serviceTemplateUsages = host._serviceTemplateUsages.filter(
+          (entry) =>
+            entry.configuration !== configuration || entry.package_key !== package_key
+        );
+      }
       break;
     }
     case DeviceEventType.LABEL_DELETED: {

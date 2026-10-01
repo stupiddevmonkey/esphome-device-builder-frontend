@@ -37,6 +37,8 @@ export {
   resolvedComponentsContext,
   resolvedPlatformsContext,
   serverVersionContext,
+  serviceTemplateUsagesContext,
+  serviceTemplatesContext,
   valuesReadContext,
   versionContext,
   versionHistoryEnabledContext,

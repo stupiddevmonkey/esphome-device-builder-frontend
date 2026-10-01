@@ -76,6 +76,14 @@ import type {
   PairingWindowState,
   RemoteBuildSettings,
 } from "./types/remote-build.js";
+import type {
+  ApplyTemplateResponse,
+  DeviceTemplateSelection,
+  RemoveTemplateResponse,
+  ServiceTemplate,
+  ServiceTemplateDetail,
+  ServiceTemplateUsage,
+} from "./types/service-templates.js";
 import { OTA_PORT, type StreamCallbacks } from "./types/streaming.js";
 import type {
   ArchivedDevice,
@@ -937,6 +945,7 @@ export class ESPHomeAPI {
     psk?: string;
     file_content?: string;
     overwrite?: boolean;
+    templates?: DeviceTemplateSelection[];
   }): Promise<WizardResponse> {
     return this.sendCommand<WizardResponse>("devices/create", args);
   }
@@ -1306,6 +1315,81 @@ export class ESPHomeAPI {
    *  last so consumers can drop the catalog entry. */
   async deleteLabel(labelId: string): Promise<void> {
     await this.sendCommand("labels/delete", { label_id: labelId });
+  }
+
+  // ─── Service Template Commands ─────────────────────────────
+
+  async getServiceTemplate(templateId: string): Promise<ServiceTemplateDetail> {
+    return this.sendCommand<ServiceTemplateDetail>("service_templates/get", {
+      template_id: templateId,
+    });
+  }
+
+  async createServiceTemplate(args: {
+    template_id: string;
+    body: string;
+    manifest?: string | null;
+    overwrite?: boolean;
+  }): Promise<ServiceTemplate> {
+    return this.sendCommand<ServiceTemplate>("service_templates/create", args);
+  }
+
+  async updateServiceTemplate(args: {
+    template_id: string;
+    body?: string;
+    manifest?: string | null;
+  }): Promise<ServiceTemplate> {
+    return this.sendCommand<ServiceTemplate>("service_templates/update", args);
+  }
+
+  async deleteServiceTemplate(
+    templateId: string,
+    force = false
+  ): Promise<{ template_id: string; usages: ServiceTemplateUsage[] }> {
+    return this.sendCommand("service_templates/delete", {
+      template_id: templateId,
+      ...(force ? { force: true } : {}),
+    });
+  }
+
+  async extractServiceTemplate(args: {
+    configuration: string;
+    blocks: string[];
+    template_id: string;
+    manifest?: string | null;
+    overwrite?: boolean;
+  }): Promise<ServiceTemplate> {
+    return this.sendCommand<ServiceTemplate>("service_templates/extract", args);
+  }
+
+  async applyServiceTemplate(args: {
+    configuration: string;
+    template_id: string;
+    package_key?: string;
+    vars?: Record<string, string>;
+    yaml?: string;
+  }): Promise<ApplyTemplateResponse> {
+    return this.sendCommand<ApplyTemplateResponse>("service_templates/apply", args);
+  }
+
+  async removeServiceTemplate(args: {
+    configuration: string;
+    package_key: string;
+    yaml?: string;
+  }): Promise<RemoveTemplateResponse> {
+    return this.sendCommand<RemoveTemplateResponse>("service_templates/remove", args);
+  }
+
+  async acceptServiceTemplateUpdate(templateId: string): Promise<ServiceTemplate> {
+    return this.sendCommand<ServiceTemplate>("service_templates/accept_update", {
+      template_id: templateId,
+    });
+  }
+
+  async getServiceTemplateUsages(templateId?: string): Promise<ServiceTemplateUsage[]> {
+    return this.sendCommand<ServiceTemplateUsage[]>("service_templates/usages", {
+      ...(templateId !== undefined ? { template_id: templateId } : {}),
+    });
   }
 
   // ─── Streaming Commands (per-connection) ───────────────────

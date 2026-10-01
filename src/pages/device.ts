@@ -1504,7 +1504,7 @@ export class ESPHomePageDevice extends LitElement {
    * (core = 0, components = 1, automations = 2).
    */
   private _onNavSectionShow(e: CustomEvent<{ section: NavSectionName }>) {
-    const indexBySection = { core: 0, components: 1, automations: 2 };
+    const indexBySection = { core: 0, components: 1, automations: 2, services: 3 };
     const idx = indexBySection[e.detail.section];
     if (idx === undefined) return;
     const next = new Set<number>([idx]);

@@ -44,6 +44,7 @@ import "./automation-editor/script-editor.js";
 import { locationFromSectionKey } from "./automation-editor/serialise.js";
 import "./change-board-dialog.js";
 import "./device-section-config.js";
+import "./device-section-services.js";
 
 registerMdiIcons({
   "open-in-new": mdiOpenInNew,
@@ -54,8 +55,8 @@ registerMdiIcons({
   usb: mdiUsb,
 });
 
-/** The three top-level section groups the navigator can expand. */
-export type NavSectionName = "core" | "components" | "automations";
+/** The top-level section groups the navigator can expand. */
+export type NavSectionName = "core" | "components" | "automations" | "services";
 
 @customElement("esphome-device-board-info")
 export class ESPHomeDeviceBoardInfo extends LitElement {
@@ -342,6 +343,13 @@ export class ESPHomeDeviceBoardInfo extends LitElement {
                 action: this._localize("device.show_automations"),
                 section: "automations",
               })}
+              ${this._renderStepSection({
+                title: this._localize("device.step_services"),
+                desc: this._localize("device.step_services_desc"),
+                icon: SECTION_ICON.services,
+                action: this._localize("device.step_services_action"),
+                section: "services",
+              })}
             `
       }
 
@@ -388,6 +396,20 @@ export class ESPHomeDeviceBoardInfo extends LitElement {
    */
   private _renderSelectedSection() {
     const key = this.selectedSection!;
+    if (key.startsWith("service:")) {
+      return html`<esphome-device-section-services
+        .configuration=${this.configuration}
+        .packageKey=${key.slice("service:".length)}
+        .platform=${this.board?.esphome.platform ?? ""}
+        .board=${this.board}
+        .yaml=${this.yaml}
+        @service-template-removed=${() =>
+          fireEvent(this, "section-select", {
+            sectionKey: null,
+            fromLine: undefined,
+          })}
+      ></esphome-device-section-services>`;
+    }
     const location = key.startsWith("automation:") ? this._locationForKey(key) : null;
     if (location?.kind === "script") {
       return html`<esphome-script-editor

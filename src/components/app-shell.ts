@@ -16,6 +16,10 @@ import type {
   RemoteBuildPeer,
 } from "../api/types/remote-build.js";
 import { CLEANUP_TTL_DEFAULT_SECONDS } from "../api/types/remote-build.js";
+import type {
+  ServiceTemplate,
+  ServiceTemplateUsage,
+} from "../api/types/service-templates.js";
 import { type ExperienceLevel, Theme } from "../api/types/system.js";
 import { defaultLocalize, loadLocalize, type LocalizeFunc } from "../common/localize.js";
 import type { RemoteBuildJobState } from "../context/index.js";
@@ -56,6 +60,8 @@ import {
   remoteBuildEnabledContext,
   remoteComputeOnlyContext,
   serverVersionContext,
+  serviceTemplatesContext,
+  serviceTemplateUsagesContext,
   versionContext,
   versionHistoryEnabledContext,
 } from "../context/index.js";
@@ -204,6 +210,13 @@ export class ESPHomeApp extends LitElement {
     IntegrationDoc
   > = {};
   @provide({ context: labelsContext }) @state() _labels: Label[] = [];
+  @provide({ context: serviceTemplatesContext })
+  @state()
+  _serviceTemplates: Map<string, ServiceTemplate> | null = null;
+  @provide({ context: serviceTemplateUsagesContext })
+  @state()
+  _serviceTemplateUsages: ServiceTemplateUsage[] | null = null;
+  _serviceTemplateUsageRevision = 0;
   @provide({ context: onboardingPendingContext }) @state() _onboardingPending = false;
   @provide({ context: buildServerIdentityRotationCounterContext })
   @state()
@@ -468,6 +481,7 @@ export class ESPHomeApp extends LitElement {
     subscribeToFollowJobs(this);
     void loadIntegrationDocs(this);
     void loadLabels(this);
+    void this._loadServiceTemplateUsages();
     void loadRemoteBuildSettings(this);
     void loadOnboardingState(this);
   }
@@ -477,6 +491,18 @@ export class ESPHomeApp extends LitElement {
       await this._api.subscribeEvents((event, data) => handleEvent(this, event, data));
     } catch (err) {
       console.error("Failed to subscribe to events:", err);
+    }
+  }
+
+  private async _loadServiceTemplateUsages(): Promise<void> {
+    const revision = this._serviceTemplateUsageRevision;
+    try {
+      const usages = await this._api.getServiceTemplateUsages();
+      if (revision === this._serviceTemplateUsageRevision) {
+        this._serviceTemplateUsages = usages;
+      }
+    } catch (err) {
+      console.warn("Failed to load service-template usages:", err);
     }
   }
 

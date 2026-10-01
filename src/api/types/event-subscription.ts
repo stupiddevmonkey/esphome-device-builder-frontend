@@ -17,6 +17,7 @@ import type {
   RemoteBuildPeer,
   RemoteBuildSettings,
 } from "./remote-build.js";
+import type { ServiceTemplate } from "./service-templates.js";
 import type { UserPreferences } from "./system.js";
 
 // ─── Event Subscription ─────────────────────────────────────
@@ -40,6 +41,11 @@ export enum DeviceEventType {
   LABEL_CREATED = "label_created",
   LABEL_UPDATED = "label_updated",
   LABEL_DELETED = "label_deleted",
+  SERVICE_TEMPLATE_CREATED = "service_template_created",
+  SERVICE_TEMPLATE_UPDATED = "service_template_updated",
+  SERVICE_TEMPLATE_DELETED = "service_template_deleted",
+  SERVICE_TEMPLATE_APPLIED = "service_template_applied",
+  SERVICE_TEMPLATE_REMOVED = "service_template_removed",
   JOB_QUEUED = "job_queued",
   JOB_STARTED = "job_started",
   JOB_OUTPUT = "job_output",
@@ -164,6 +170,8 @@ export interface InitialStateEventData {
    *  ``IMPORTABLE_DEVICE_ADDED`` / ``_REMOVED`` events for changes
    *  after subscription. */
   importable: AdoptableDevice[];
+  /** Service-template catalog snapshot. Omitted when its controller is unavailable. */
+  service_templates?: ServiceTemplate[];
   /** Offloader-side pairings snapshot the backend pushes once at
    *  subscribe time so the Send-builds initial paint matches what
    *  ``OFFLOADER_PAIR_STATUS_CHANGED`` events will subsequently
